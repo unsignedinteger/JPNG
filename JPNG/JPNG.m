@@ -39,6 +39,7 @@
 #import "JPNG.h"
 #import <objc/runtime.h>
 #import <objc/message.h>
+#import <assert.h>
 
 
 #import <Availability.h>
@@ -130,11 +131,31 @@ NSData *CGImageJPNGRepresentation(CGImageRef image, CGFloat quality)
     uint8_t *colorData = (uint8_t *)CFDataGetBytePtr(pixelData);
     uint8_t *opaqueColorData = (uint8_t *)malloc(width * height * 4);
     uint8_t *alphaData = (uint8_t *)malloc(width * height);
+
     CGImageAlphaInfo alphaInfo = CGImageGetAlphaInfo(image);
-    NSUInteger alphaIdx = alphaInfo == kCGImageAlphaPremultipliedLast || alphaInfo == kCGImageAlphaLast ? 3 : 0;
-    NSUInteger colorStartIdx = alphaInfo == 0 ? 1 : 0;
-    NSUInteger colorEndIdx = alphaInfo == 0 ? 3 : 2;
     BOOL premultiplied = alphaInfo == kCGImageAlphaPremultipliedLast || alphaInfo == kCGImageAlphaPremultipliedFirst;
+    NSUInteger alphaIdx;
+    NSUInteger colorStartIdx;
+    NSUInteger colorEndIdx;
+    switch (alphaInfo) {
+        case kCGImageAlphaLast:
+        case kCGImageAlphaPremultipliedLast:
+        case kCGImageAlphaNoneSkipLast:
+            alphaIdx = 3;
+            colorStartIdx = 0;
+            colorEndIdx = 2;
+            break;
+        case kCGImageAlphaFirst:
+        case kCGImageAlphaPremultipliedFirst:
+        case kCGImageAlphaNoneSkipFirst:
+            alphaIdx = 0;
+            colorStartIdx = 1;
+            colorEndIdx = 3;
+            break;
+        default:
+            assert(false); // unsupported pixel format
+    }
+    
     for (size_t i = 0; i < height; i++)
     {
         for (size_t j = 0; j < width; j++)
