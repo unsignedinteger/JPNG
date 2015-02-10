@@ -55,7 +55,6 @@
 #define CLEAR_COLOR CGColorGetConstantColor(kCGColorClear)
 #endif
 
-
 //cross-platform implementation
 
 uint32_t JPNGIdentifier = 'JPNG';
@@ -129,13 +128,25 @@ NSData *CGImageJPNGRepresentation(CGImageRef image, CGFloat quality)
     size_t height = CGImageGetHeight(image);
     CFDataRef pixelData = CGDataProviderCopyData(CGImageGetDataProvider(image));
     uint8_t *colorData = (uint8_t *)CFDataGetBytePtr(pixelData);
+    uint8_t *opaqueColorData = (uint8_t *)malloc(width * height * 4);
     uint8_t *alphaData = (uint8_t *)malloc(width * height);
+    CGImageAlphaInfo alphaInfo = CGImageGetAlphaInfo(image);
+    NSUInteger alphaIdx = alphaInfo == kCGImageAlphaPremultipliedLast || alphaInfo == kCGImageAlphaLast ? 3 : 0;
+    NSUInteger colorStartIdx = alphaInfo == 0 ? 1 : 0;
+    NSUInteger colorEndIdx = alphaInfo == 0 ? 3 : 2;
+    BOOL premultiplied = alphaInfo == kCGImageAlphaPremultipliedLast || alphaInfo == kCGImageAlphaPremultipliedFirst;
     for (size_t i = 0; i < height; i++)
     {
         for (size_t j = 0; j < width; j++)
         {
             size_t index = i * width + j;
-            alphaData[index] = colorData[index * 4 + 3];
+            uint8_t alpha = colorData[index * 4 + alphaIdx];
+            alphaData[index] = alpha;
+            CGFloat floatAlpha = premultiplied && alpha != 0 ? alpha/255.0 : 1;
+            for (NSUInteger cIdx = colorStartIdx; cIdx <= colorEndIdx; cIdx++) {
+                opaqueColorData[index * 4 + cIdx] = colorData[index * 4 + cIdx] / floatAlpha;
+            }
+            opaqueColorData[index * 4 + alphaIdx] = UINT8_MAX;
         }
     }
     CFRelease(pixelData);
@@ -144,7 +155,7 @@ NSData *CGImageJPNGRepresentation(CGImageRef image, CGFloat quality)
     CGColorSpaceRef colorSpace = CGImageGetColorSpace(image);
     CGBitmapInfo byteOrder = CGImageGetBitmapInfo(image) & kCGBitmapByteOrderMask;
     CGBitmapInfo bitmapInfo = (CGBitmapInfo)(kCGImageAlphaPremultipliedLast | byteOrder);
-    CGContextRef context = CGBitmapContextCreate(colorData, width, height, 8, width * 4, colorSpace, bitmapInfo);
+    CGContextRef context = CGBitmapContextCreate(opaqueColorData, width, height, 8, width * 4, colorSpace, bitmapInfo);
     image = CGBitmapContextCreateImage(context);
     CGContextRelease(context);
     
@@ -161,6 +172,7 @@ NSData *CGImageJPNGRepresentation(CGImageRef image, CGFloat quality)
     }
     CFRelease(destination);
     CGImageRelease(image);
+    free(opaqueColorData);
 
     //get mask image
     colorSpace = CGColorSpaceCreateDeviceGray();
